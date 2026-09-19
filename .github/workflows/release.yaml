@@ -55,7 +55,7 @@ jobs:
             ghcr.io/isvaldi-consulting/tsidp-operator:${{ github.ref_name }}
             ghcr.io/isvaldi-consulting/tsidp-operator:latest
 
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
 
       - name: Package and push Helm chart (OCI)
         env:
