@@ -74,7 +74,7 @@ exists but is not recommended for production.
 ## Installing
 
 ```sh
-helm install tsidp charts/tsidp \
+helm install tsidp oci://ghcr.io/isvaldi-consulting/charts/tsidp --version 0.1.0 \
   --namespace tsidp --create-namespace \
   --set tsidp.authKey.existingSecret=tsidp-authkey
 ```
