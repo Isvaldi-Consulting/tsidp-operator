@@ -589,3 +589,18 @@ func TestRenameLeavesForeignSecretAtOldName(t *testing.T) {
 		t.Fatal("rename should still converge at the new name")
 	}
 }
+
+func TestWhitespaceRedirectURIRejected(t *testing.T) {
+	cr := newCR("app")
+	cr.Spec.RedirectURIs = []string{"https://a.example/cb https://evil.example/cb"}
+	h := newHarness(t, cr)
+	h.settle(t)
+
+	oc := h.getCR(t)
+	if oc.Status.ClientID != "" || len(h.idp.Snapshot()) != 0 {
+		t.Fatal("a whitespace-bearing redirect URI must never reach tsidp")
+	}
+	if c := meta.FindStatusCondition(oc.Status.Conditions, tsidpv1alpha1.ConditionReady); c == nil || c.Status != metav1.ConditionFalse || c.Reason != "SpecInvalid" {
+		t.Fatalf("expected Ready=False reason SpecInvalid: %+v", oc.Status.Conditions)
+	}
+}

@@ -56,7 +56,7 @@ tsidp:
   authKey:
     # Name of a pre-created Secret in the release namespace holding the
     # Tailscale auth key (tskey-auth-... or tskey-client-...). It is mounted
-    # into the pod and exposed to tsidp via TS_AUTHKEY_FILE.
+    # into the pod and exposed to tsidp via TS_AUTHKEY.
     # If empty, no key is mounted and tsidp prints an interactive login URL
     # in its logs on first boot.
     existingSecret: ""

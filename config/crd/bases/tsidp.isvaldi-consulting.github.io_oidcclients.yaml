@@ -67,6 +67,7 @@ spec:
                   Defaults to the object name. The operator appends an ownership
                   fingerprint of the form "[k8s:<namespace>/<name>/<uid8>]" to the
                   registered name so it can recognize and adopt its registrations.
+                maxLength: 128
                 type: string
                 x-kubernetes-validations:
                 - message: clientName must not contain the operator ownership marker
@@ -103,8 +104,10 @@ spec:
                   anything admitted here but rejected there would register fine and
                   then permanently wedge InPlace updates.
                 items:
+                  maxLength: 512
                   minLength: 1
                   type: string
+                maxItems: 32
                 minItems: 1
                 type: array
                 x-kubernetes-validations:
@@ -115,8 +118,6 @@ spec:
                     u.lowerAscii().startsWith(p)))
                 - message: redirect URIs must be absolute URIs
                   rule: self.all(u, u.contains(':'))
-                - message: redirect URIs must not contain whitespace
-                  rule: self.all(u, !u.matches('.*\s.*'))
               responseTypes:
                 description: ResponseTypes defaults to ["code"] server-side.
                 items:

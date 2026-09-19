@@ -74,8 +74,14 @@ spec:
             - name: TAILSCALE_USE_WIP_CODE
               value: "1"
             {{- if .Values.tsidp.authKey.existingSecret }}
-            - name: TS_AUTHKEY_FILE
-              value: /etc/tsidp-auth/{{ .Values.tsidp.authKey.key }}
+            # Plain env (not TS_AUTHKEY_FILE): tsnet reads TS_AUTHKEY
+            # natively in every tsidp version; TS_AUTHKEY_FILE only exists
+            # on tsidp main (unreleased as of v0.0.15).
+            - name: TS_AUTHKEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.tsidp.authKey.existingSecret }}
+                  key: {{ .Values.tsidp.authKey.key }}
             {{- end }}
             {{- with .Values.tsidp.extraEnv }}
             {{- toYaml . | nindent 12 }}
@@ -83,11 +89,7 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data
-            {{- if .Values.tsidp.authKey.existingSecret }}
-            - name: authkey
-              mountPath: /etc/tsidp-auth
-              readOnly: true
-            {{- end }}
+
           securityContext:
             runAsNonRoot: true
             runAsUser: 1001
@@ -174,11 +176,7 @@ spec:
                     - path: namespace
                       fieldRef:
                         fieldPath: metadata.namespace
-        {{- if .Values.tsidp.authKey.existingSecret }}
-        - name: authkey
-          secret:
-            secretName: {{ .Values.tsidp.authKey.existingSecret }}
-        {{- end }}
+
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
