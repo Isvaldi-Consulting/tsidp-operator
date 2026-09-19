@@ -48,6 +48,7 @@ type OIDCClientSpec struct {
 	// Defaults to the object name. The operator appends an ownership
 	// fingerprint of the form "[k8s:<namespace>/<name>/<uid8>]" to the
 	// registered name so it can recognize and adopt its registrations.
+	// +kubebuilder:validation:MaxLength=128
 	// +kubebuilder:validation:XValidation:rule="!self.contains('[k8s:')",message="clientName must not contain the operator ownership marker '[k8s:'"
 	// +optional
 	ClientName string `json:"clientName,omitempty"`
@@ -56,13 +57,14 @@ type OIDCClientSpec struct {
 	// exactly and case-sensitively at /authorize, so entries must be the
 	// final canonical strings the application sends.
 	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=32
 	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:MaxLength=512
 	// The scheme blocklist mirrors tsidp's own /edit validation exactly:
 	// anything admitted here but rejected there would register fine and
 	// then permanently wedge InPlace updates.
 	// +kubebuilder:validation:XValidation:rule="self.all(u, !['javascript:','data:','file:','vbscript:','about:','blob:','filesystem:','chrome:','chrome-extension:','ftp:','mailto:'].exists(p, u.lowerAscii().startsWith(p)))",message="redirect URI scheme is not allowed (mirrors tsidp's blocklist: javascript, data, file, vbscript, about, blob, filesystem, chrome, chrome-extension, ftp, mailto)"
 	// +kubebuilder:validation:XValidation:rule="self.all(u, u.contains(':'))",message="redirect URIs must be absolute URIs"
-	// +kubebuilder:validation:XValidation:rule="self.all(u, !u.matches('.*\\s.*'))",message="redirect URIs must not contain whitespace"
 	RedirectURIs []string `json:"redirectUris"`
 
 	// +kubebuilder:validation:Enum=client_secret_basic;client_secret_post;none

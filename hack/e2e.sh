@@ -18,9 +18,16 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 if [[ -z "${TS_AUTHKEY:-}" ]]; then
-  echo "E2E FAIL: TS_AUTHKEY is required (a Tailscale auth key; ephemeral+reusable+tagged recommended)." >&2
+  echo "E2E FAIL: TS_AUTHKEY is required (a Tailscale auth key; ephemeral+reusable recommended)." >&2
   exit 1
 fi
+
+for bin in kind kubectl helm docker; do
+  if ! command -v "$bin" >/dev/null 2>&1; then
+    echo "E2E FAIL: required tool '$bin' not found on PATH." >&2
+    exit 1
+  fi
+done
 
 default_tsidp_image() {
   grep -E '^FROM ' "$ROOT/hack/tsidp.Dockerfile" | awk '{print $2}'
@@ -97,12 +104,11 @@ if [[ "$SKIP_BUILD" != "true" ]]; then
   make -C "$ROOT" docker-build IMG="$OPERATOR_IMG"
 fi
 
-# 3. Load both images into kind.
-if ! docker image inspect "$TSIDP_IMAGE" >/dev/null 2>&1; then
-  log "pulling ${TSIDP_IMAGE}"
-  docker pull "$TSIDP_IMAGE"
-fi
-kind load docker-image "$TSIDP_IMAGE" --name "$KIND_CLUSTER"
+# 3. Load the locally-built operator image into kind. The tsidp image is
+# deliberately NOT pre-loaded: it is public on ghcr, so the kind node pulls
+# it directly — `kind load docker-image` of a multi-arch image whose full
+# manifest list is not in the local Docker store fails with
+# "ctr: content digest ... not found".
 kind load docker-image "$OPERATOR_IMG" --name "$KIND_CLUSTER"
 
 # 4. Namespace + Tailscale authkey Secret (idempotent applies).

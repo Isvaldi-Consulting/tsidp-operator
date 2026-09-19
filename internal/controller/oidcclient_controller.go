@@ -200,6 +200,17 @@ func (r *OIDCClientReconciler) reconcileDelete(ctx context.Context, oc *tsidpv1a
 func (r *OIDCClientReconciler) reconcileNormal(ctx context.Context, oc *tsidpv1alpha1.OIDCClient) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 
+	// Whitespace in a redirect URI can never be valid: tsidp's /edit wire
+	// format is newline-separated and trims each line, so such a spec
+	// could register but never converge. Enforced here rather than in CRD
+	// CEL because backslash escapes do not survive the marker->YAML->CEL
+	// round trip.
+	for _, u := range oc.Spec.RedirectURIs {
+		if strings.ContainsAny(u, " \t\r\n") {
+			return r.notReady(oc, "SpecInvalid", fmt.Sprintf("redirect URI %q contains whitespace", u))
+		}
+	}
+
 	// Discovery is fetched before any mutating call so a dead tsidp fails
 	// the reconcile before side effects, and so the Secret always carries
 	// the public issuer even though the operator may be talking over
