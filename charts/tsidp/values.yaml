@@ -1,0 +1,145 @@
+# Default values for the tsidp chart.
+#
+# tsidp is deployed as a single-replica StatefulSet (replica count is NOT
+# configurable — see templates/statefulset.yaml for the rationale) with the
+# tsidp-operator running as a sidecar container in the same pod.
+
+nameOverride: ""
+fullnameOverride: ""
+
+# Secrets used to pull the container images, e.g. [{name: my-pull-secret}].
+imagePullSecrets: []
+
+# Extra annotations / labels added to the tsidp pod.
+podAnnotations: {}
+podLabels: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+tsidp:
+  image:
+    # Official image, published to ghcr.io by github.com/tailscale/tsidp on
+    # every release tag (image tags keep the "v" prefix, e.g. "v0.0.15").
+    repository: ghcr.io/tailscale/tsidp
+    # The default tag is the tsidp version this operator release is
+    # e2e-tested against. Source of truth for the pin is hack/tsidp.Dockerfile
+    # in the operator repo; this line is synced by `make sync-tsidp-version`
+    # (maintainer-initiated; see docs/COMPATIBILITY.md). Keep the tag a plain
+    # quoted string on its own line.
+    tag: "v0.0.15" # tsidp-version-pin
+    pullPolicy: IfNotPresent
+
+  # Hostname on the tailnet: the node becomes <hostname>.<tailnet>.ts.net.
+  hostname: "idp"
+
+  # Loopback listener port inside the pod (tsidp's -local-port flag).
+  # The operator sidecar talks to tsidp on http://127.0.0.1:<localPort>.
+  # SECURITY: this listener grants admin + dynamic client registration to
+  # anything that can reach it (it trusts pod-local callers). It binds
+  # 127.0.0.1 only, so it is unreachable from other pods — but anyone who can
+  # "kubectl port-forward" or "kubectl exec" into this pod gets full admin.
+  localPort: 8080
+
+  # Expose tsidp on the public internet via Tailscale Funnel (adds -funnel).
+  funnel: false
+
+  # Comma-separated tags to advertise (tsidp's -advertise-tags flag), e.g.
+  # "tag:tsidp". REQUIRED when the auth key is an OAuth client secret
+  # (tskey-client-...). Empty string omits the flag.
+  advertiseTags: ""
+
+  # Port tsidp serves HTTPS on, on its tailnet interface (-port flag).
+  port: 443
+
+  authKey:
+    # Name of a pre-created Secret in the release namespace holding the
+    # Tailscale auth key (tskey-auth-... or tskey-client-...). It is mounted
+    # into the pod and exposed to tsidp via TS_AUTHKEY_FILE.
+    # If empty, no key is mounted and tsidp prints an interactive login URL
+    # in its logs on first boot.
+    existingSecret: ""
+    # Key within that Secret that holds the auth key.
+    key: "authkey"
+
+  # Persistent volume for /data. NOTE: the chart always passes -dir=/data to
+  # tsidp — this flag is REQUIRED. Without it tsidp writes state to its
+  # working directory (/app, root-owned in the official image) and returns
+  # 500s at runtime. /data holds the tsnet node identity, the OIDC signing
+  # key and the client registry (a JSON state file), so losing it means
+  # re-registering the node and losing all registered clients.
+  persistence:
+    size: 1Gi
+    # StorageClass for the data PVC. "" uses the cluster default;
+    # "-" disables dynamic provisioning (sets storageClassName: "").
+    storageClass: ""
+
+  # Extra CLI args appended to the tsidp container, e.g. ["-enable-sts"].
+  extraArgs: []
+
+  # Extra environment variables for the tsidp container (raw EnvVar list).
+  extraEnv: []
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+
+operator:
+  image:
+    repository: ghcr.io/isvaldi-consulting/tsidp-operator
+    # Empty tag defaults to the chart appVersion.
+    tag: ""
+    pullPolicy: IfNotPresent
+
+  # How often the operator re-lists OIDCClients and reconciles them against
+  # tsidp's API (drift repair). Go duration string.
+  resyncInterval: "10m"
+
+
+  # Optional log level passed to controller-runtime's --zap-log-level flag.
+  # Valid values: "debug", "info", "error", or a positive integer string
+  # (e.g. "2") for increased verbosity. NOTE: "warn" is NOT accepted by
+  # controller-runtime and would crashloop the operator — the chart rejects
+  # it at template time. Empty omits the flag.
+  logLevel: ""
+
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+
+serviceAccount:
+  # Create the ServiceAccount used by the pod (the operator needs it for its
+  # RBAC; tsidp itself talks only to the Tailscale control plane).
+  create: true
+  # Name of the ServiceAccount. Empty defaults to the chart fullname.
+  name: ""
+  annotations: {}
+
+rbac:
+  # Create the ClusterRole/ClusterRoleBinding the operator needs
+  # (OIDCClients in all namespaces, operator-managed Secrets, Events).
+  create: true
+
+networkPolicy:
+  # Restrict ingress to the tsidp pod. tsidp serves tailnet traffic over its
+  # OUTBOUND tsnet tunnel, so denying all pod ingress does not break serving;
+  # with no extra rules this policy denies all ingress (including scrapes of
+  # the operator's :8081 metrics port).
+  enabled: false
+  # Additional NetworkPolicyIngressRule entries, e.g. to allow Prometheus to
+  # scrape metrics:
+  #   - from:
+  #       - namespaceSelector:
+  #           matchLabels:
+  #             kubernetes.io/metadata.name: monitoring
+  #     ports:
+  #       - port: 8081
+  #         protocol: TCP
+  extraIngress: []

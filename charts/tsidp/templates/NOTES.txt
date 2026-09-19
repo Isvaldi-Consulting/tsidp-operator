@@ -1,0 +1,61 @@
+tsidp {{ .Values.tsidp.image.tag }} + tsidp-operator {{ .Values.operator.image.tag | default .Chart.AppVersion }}
+deployed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+1. Tailscale auth key
+{{- if .Values.tsidp.authKey.existingSecret }}
+
+   tsidp reads its auth key from Secret "{{ .Values.tsidp.authKey.existingSecret }}"
+   (key "{{ .Values.tsidp.authKey.key }}"). If that Secret does not exist yet, the pod
+   will not start. Create it with:
+
+     kubectl -n {{ .Release.Namespace }} create secret generic {{ .Values.tsidp.authKey.existingSecret }} \
+       --from-literal={{ .Values.tsidp.authKey.key }}='tskey-auth-XXXXXXXXXXXX'
+
+   OAuth client secrets (tskey-client-...) also work, but then you must set
+   tsidp.advertiseTags (e.g. "tag:tsidp").
+{{- else }}
+
+   WARNING: tsidp.authKey.existingSecret is not set, so no auth key is
+   mounted. On first boot tsidp will print an interactive login URL in its
+   logs ("kubectl -n {{ .Release.Namespace }} logs sts/{{ include "tsidp.fullname" . }} -c tsidp").
+   To use an auth key instead, create a Secret:
+
+     kubectl -n {{ .Release.Namespace }} create secret generic tsidp-authkey \
+       --from-literal=authkey='tskey-auth-XXXXXXXXXXXX'
+
+   then upgrade the release with --set tsidp.authKey.existingSecret=tsidp-authkey
+{{- end }}
+
+2. Wait for tsidp to join the tailnet, then visit:
+
+     https://{{ .Values.tsidp.hostname }}.<your-tailnet>.ts.net{{ if ne (int .Values.tsidp.port) 443 }}:{{ .Values.tsidp.port }}{{ end }}
+
+   (The first TLS certificate can take a few minutes to provision.)
+
+3. Register an OIDC client by creating an OIDCClient resource:
+
+     apiVersion: tsidp.isvaldi-consulting.github.io/v1alpha1
+     kind: OIDCClient
+     metadata:
+       name: my-app
+       namespace: default
+     spec:
+       redirectUris:
+         - https://my-app.example.com/oauth2/callback
+       secretName: my-app-oidc
+
+   The operator registers the client with tsidp and writes its credentials
+   into the Secret named by spec.secretName (in the OIDCClient's namespace)
+   with these keys:
+
+     client_id, client_secret, issuer, authorization_endpoint,
+     token_endpoint, userinfo_endpoint, jwks_uri, redirect_uris
+
+4. SECURITY NOTE
+
+   tsidp's loopback listener (127.0.0.1:{{ .Values.tsidp.localPort }}) grants full admin and
+   dynamic client registration to ANY caller that reaches it — that trust is
+   how the operator sidecar works. It is not reachable from other pods, but
+   "kubectl port-forward" (and "kubectl exec") into this pod bypasses that.
+   Restrict RBAC on pods/portforward and pods/exec for this namespace to
+   cluster administrators only.

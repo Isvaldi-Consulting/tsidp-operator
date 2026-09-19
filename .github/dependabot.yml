@@ -1,0 +1,59 @@
+# Dependabot configuration for tsidp-operator.
+#
+# The "/hack" docker entry is the important one: it watches
+# hack/tsidp.Dockerfile, which pins the upstream tsidp release we test
+# against. See docs/COMPATIBILITY.md for the full loop.
+version: 2
+updates:
+  # Go module dependencies (controller-runtime, k8s.io/*, tailscale, ...).
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      go-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    labels:
+      - "dependencies"
+      - "go"
+
+  # GitHub Actions used by our workflows.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "ci"
+
+  # Base images of the operator's own image (root Dockerfile:
+  # golang builder + distroless static runtime).
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "docker"
+
+  # THE TSIDP WATCH.
+  # hack/tsidp.Dockerfile contains a single FROM line pinning
+  # ghcr.io/tailscale/tsidp:<tag>. Dependabot treats it like any other
+  # Dockerfile and opens a PR when upstream tags a new release. The
+  # tsidp-compat workflow's in-job gate detects the changed pin on that PR
+  # and runs the e2e loop, so a tsidp bump can only merge once the sidecar
+  # is proven compatible.
+  # NOTE: for the e2e job to run on Dependabot PRs, TS_AUTHKEY must also be
+  # configured as a *Dependabot* secret (Settings -> Secrets -> Dependabot),
+  # not just an Actions secret.
+  - package-ecosystem: "docker"
+    directory: "/hack"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "tsidp-bump"
+      - "dependencies"

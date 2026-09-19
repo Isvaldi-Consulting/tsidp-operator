@@ -1,0 +1,23 @@
+{{- if .Values.networkPolicy.enabled }}
+# tsidp serves tailnet traffic over its OUTBOUND tsnet tunnel and its admin
+# loopback listener binds 127.0.0.1 only, so denying all pod ingress does not
+# break the identity provider. With no extraIngress rules this policy denies
+# all ingress to the pod (including scrapes of the operator's :8081 metrics).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "tsidp.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "tsidp.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "tsidp.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  {{- with .Values.networkPolicy.extraIngress }}
+  ingress:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}

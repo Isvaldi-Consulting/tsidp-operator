@@ -1,0 +1,215 @@
+# The tsidp <-> operator compatibility testing loop.
+#
+# How the whole loop fits together (see docs/COMPATIBILITY.md for prose):
+#
+#   hack/tsidp.Dockerfile pins the tsidp release under test.
+#   Dependabot (docker ecosystem, /hack) bumps that pin -> the e2e job spins
+#   up kind, installs the chart with the bumped tsidp image + a freshly built
+#   operator image, and runs hack/e2e.sh's assertions against a real tailnet.
+#
+# The workflow deliberately runs on EVERY pull request (no `paths:` filter)
+# so that "e2e" can be a required status check without deadlocking normal
+# PRs: a path-filtered workflow that never triggers reports NO check at all
+# (which blocks merging forever — not the same as a "skipped" conclusion).
+# Instead the e2e job itself diffs against the base branch:
+#   - hack/tsidp.Dockerfile unchanged  -> fast success (required check green);
+#   - pin changed, TS_AUTHKEY present  -> full kind + tailnet e2e;
+#   - pin changed, TS_AUTHKEY missing  -> HARD FAIL (an untested tsidp bump
+#     must never be mergeable just because credentials were absent).
+#
+# Merge flow for Dependabot bumps (make "e2e" a required status check):
+#   1. Dependabot opens the PR bumping hack/tsidp.Dockerfile.
+#   2. e2e must pass (requires TS_AUTHKEY configured as a *Dependabot* secret
+#      in addition to an Actions secret — Dependabot-triggered runs read from
+#      the Dependabot secret store).
+#   3. On merge, a maintainer runs `make sync-tsidp-version` (or triggers this
+#      workflow via workflow_dispatch) to propagate the tag into
+#      charts/tsidp/values.yaml and versions.yaml via the record-compat job.
+#
+# Honesty note about automation limits: workflows triggered by Dependabot run
+# with a read-only GITHUB_TOKEN, and PRs opened *by* GITHUB_TOKEN do not
+# trigger other workflows. So we do not try to auto-commit the values.yaml /
+# versions.yaml sync onto Dependabot's PR — the record-compat job below is a
+# deliberate, maintainer-initiated workflow_dispatch step instead.
+
+name: tsidp compatibility
+
+on:
+  pull_request:
+  schedule:
+    # Weekly canary: re-test the pinned pair every Monday 06:00 UTC even with
+    # no code changes (catches registry/image regressions and bit-rot).
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      tsidp_tag:
+        description: >-
+          Optional tsidp image tag to test instead of the pin in
+          hack/tsidp.Dockerfile (e.g. v0.0.16). If e2e passes, record-compat
+          opens a PR updating the pin, chart, and versions.yaml.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  # secrets.* is not available in job-level `if:` expressions, so a tiny gate
+  # job exports "is TS_AUTHKEY configured?" as an output that e2e can key on.
+  check-secret:
+    runs-on: ubuntu-latest
+    outputs:
+      has-key: ${{ steps.check.outputs.has-key }}
+    steps:
+      - name: Check for TS_AUTHKEY
+        id: check
+        env:
+          TS_AUTHKEY: ${{ secrets.TS_AUTHKEY }}
+        run: |
+          if [ -n "$TS_AUTHKEY" ]; then
+            echo "has-key=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has-key=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::TS_AUTHKEY secret not available; skipping real e2e, contract-test is the fallback."
+          fi
+
+  # THE REAL LOOP: kind + real tsidp (pinned or overridden tag) + operator
+  # sidecar + sample OIDCClient lifecycle assertions. All cluster logic lives
+  # in hack/e2e.sh; this job only installs prerequisites and calls `make e2e`.
+  #
+  # Designed to be a REQUIRED status check: it runs on every PR, but the
+  # expensive part is gated by the "Decide whether e2e must run" step —
+  # PRs that leave hack/tsidp.Dockerfile untouched succeed in seconds, and
+  # a pin-bump PR without TS_AUTHKEY fails loudly instead of skipping.
+  e2e:
+    needs: check-secret
+    # Always run on PRs (the in-job gate decides what happens); scheduled and
+    # manual runs still skip cleanly when no TS_AUTHKEY is configured.
+    if: github.event_name == 'pull_request' || needs.check-secret.outputs.has-key == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # Full history so the gate step can diff against the PR base ref.
+          fetch-depth: 0
+      - name: Decide whether e2e must run
+        id: gate
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          HAS_KEY: ${{ needs.check-secret.outputs.has-key }}
+        run: |
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            # schedule / workflow_dispatch: the job-level `if` already
+            # guaranteed TS_AUTHKEY is present.
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --name-only "origin/${BASE_REF}...HEAD" | grep -qx "hack/tsidp.Dockerfile"; then
+            if [ "$HAS_KEY" != "true" ]; then
+              echo "::error::hack/tsidp.Dockerfile (the tsidp version pin) changed in this PR, but the TS_AUTHKEY secret is not available, so the change CANNOT be e2e-tested. Untested tsidp bumps must not merge. Configure TS_AUTHKEY as an Actions secret (and as a Dependabot secret for Dependabot PRs) — see docs/COMPATIBILITY.md."
+              exit 1
+            fi
+            echo "tsidp pin changed; running the full e2e loop"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "tsidp pin unchanged by this PR; nothing to e2e-test (fast success so the required check stays green)"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-go@v6
+        if: steps.gate.outputs.run == 'true'
+        with:
+          go-version-file: go.mod
+      - uses: azure/setup-helm@v4
+        if: steps.gate.outputs.run == 'true'
+      - name: Install kind
+        if: steps.gate.outputs.run == 'true'
+        uses: helm/kind-action@v1
+        with:
+          install_only: true
+      - name: Resolve tsidp image under test
+        if: steps.gate.outputs.run == 'true'
+        id: tsidp
+        env:
+          TSIDP_TAG_OVERRIDE: ${{ inputs.tsidp_tag }}
+        run: |
+          if [ -n "$TSIDP_TAG_OVERRIDE" ]; then
+            echo "image=ghcr.io/tailscale/tsidp:${TSIDP_TAG_OVERRIDE}" >> "$GITHUB_OUTPUT"
+          else
+            echo "image=$(grep '^FROM' hack/tsidp.Dockerfile | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Run e2e loop
+        if: steps.gate.outputs.run == 'true'
+        env:
+          TS_AUTHKEY: ${{ secrets.TS_AUTHKEY }}
+          TSIDP_IMAGE: ${{ steps.tsidp.outputs.image }}
+        run: make e2e
+
+  # NO-CREDENTIALS FALLBACK (always runs, including on forks where secrets
+  # are unavailable): unit tests include a fake-tsidp contract suite that
+  # exercises the operator's client against tsidp's HTTP API surface. It does
+  # not prove the real binary still behaves — only e2e does that — but it
+  # keeps every PR honest about the API contract we code against.
+  contract-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Unit + contract tests
+        run: make test
+
+  # Record a passing pair: propagate the tested tsidp tag into
+  # charts/tsidp/values.yaml and versions.yaml, and open a PR with the result.
+  # Deliberately restricted to workflow_dispatch (see honesty note at top);
+  # for Dependabot bumps the maintainer runs `make sync-tsidp-version` after
+  # merge instead.
+  #
+  # TOKEN NOTE: PRs created with the default GITHUB_TOKEN do NOT trigger any
+  # workflows, so the sync PR would land with no CI at all. Maintainers
+  # should add a COMPAT_SYNC_PAT repo secret (fine-grained PAT scoped to this
+  # repo with contents:write + pull-requests:write) so the PR is opened with
+  # a real user token and gets normal CI. Without it we fall back to
+  # github.token and the maintainer must close/reopen the PR (or push an
+  # empty commit) to kick off checks. See docs/COMPATIBILITY.md.
+  record-compat:
+    needs: e2e
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v5
+      - name: Apply tsidp_tag override to the pin (if provided)
+        if: inputs.tsidp_tag != ''
+        env:
+          TSIDP_TAG_OVERRIDE: ${{ inputs.tsidp_tag }}
+        run: |
+          sed -i -E "s|^FROM ghcr\.io/tailscale/tsidp:.*$|FROM ghcr.io/tailscale/tsidp:${TSIDP_TAG_OVERRIDE}|" hack/tsidp.Dockerfile
+          grep '^FROM' hack/tsidp.Dockerfile
+      - name: Sync pinned version into chart and versions.yaml
+        env:
+          # This job only runs after a passing e2e (needs: e2e), so it is
+          # the one place allowed to stamp the `tested:` date.
+          FORCE_TESTED_DATE: "1"
+        run: ./hack/sync-tsidp-version.sh
+      - name: Open sync PR
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.COMPAT_SYNC_PAT || github.token }}
+          branch: compat/sync-tsidp-version
+          title: "chore: record e2e-tested tsidp version"
+          commit-message: "chore: sync tsidp pin into chart and versions.yaml"
+          labels: tsidp-bump
+          body: |
+            Automated by the `tsidp compatibility` workflow (record-compat job)
+            after a passing e2e run.
+
+            - `hack/tsidp.Dockerfile`: pinned tsidp tag (source of truth)
+            - `charts/tsidp/values.yaml`: chart default tsidp image tag
+            - `versions.yaml`: compatibility matrix row with the tested date
+
+            See docs/COMPATIBILITY.md.

@@ -1,0 +1,10 @@
+apiVersion: tsidp.isvaldi-consulting.github.io/v1alpha1
+kind: OIDCClient
+metadata:
+  name: sample
+spec:
+  clientName: "Sample App"
+  redirectUris:
+    - https://sample.example.ts.net/oauth/callback
+  scope: "openid profile email"
+  secretName: sample-oidc

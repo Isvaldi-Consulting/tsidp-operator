@@ -1,0 +1,249 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: oidcclients.tsidp.isvaldi-consulting.github.io
+spec:
+  group: tsidp.isvaldi-consulting.github.io
+  names:
+    kind: OIDCClient
+    listKind: OIDCClientList
+    plural: oidcclients
+    singular: oidcclient
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.clientId
+      name: Client ID
+      type: string
+    - jsonPath: .status.secretName
+      name: Secret
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          OIDCClient declares an OIDC client that the operator registers with tsidp,
+          materializing the credentials into a Kubernetes Secret.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: OIDCClientSpec defines the desired OIDC client registration
+              in tsidp.
+            properties:
+              applicationType:
+                default: web
+                enum:
+                - web
+                - native
+                type: string
+              clientName:
+                description: |-
+                  ClientName is the human-readable client name registered with tsidp.
+                  Defaults to the object name. The operator appends an ownership
+                  fingerprint of the form "[k8s:<namespace>/<name>/<uid8>]" to the
+                  registered name so it can recognize and adopt its registrations.
+                type: string
+                x-kubernetes-validations:
+                - message: clientName must not contain the operator ownership marker
+                    '[k8s:'
+                  rule: '!self.contains(''[k8s:'')'
+              clientUri:
+                type: string
+              contacts:
+                items:
+                  type: string
+                type: array
+              deletionPolicy:
+                default: Deregister
+                description: |-
+                  DeletionPolicy controls what happens to the tsidp registration when the
+                  OIDCClient object is deleted.
+                enum:
+                - Deregister
+                - Orphan
+                type: string
+              grantTypes:
+                description: GrantTypes defaults to ["authorization_code"] server-side.
+                items:
+                  type: string
+                type: array
+              logoUri:
+                type: string
+              redirectUris:
+                description: |-
+                  RedirectURIs are the allowed OAuth redirect URIs. tsidp matches them
+                  exactly and case-sensitively at /authorize, so entries must be the
+                  final canonical strings the application sends.
+                  The scheme blocklist mirrors tsidp's own /edit validation exactly:
+                  anything admitted here but rejected there would register fine and
+                  then permanently wedge InPlace updates.
+                items:
+                  minLength: 1
+                  type: string
+                minItems: 1
+                type: array
+                x-kubernetes-validations:
+                - message: 'redirect URI scheme is not allowed (mirrors tsidp''s blocklist:
+                    javascript, data, file, vbscript, about, blob, filesystem, chrome,
+                    chrome-extension, ftp, mailto)'
+                  rule: self.all(u, !['javascript:','data:','file:','vbscript:','about:','blob:','filesystem:','chrome:','chrome-extension:','ftp:','mailto:'].exists(p,
+                    u.lowerAscii().startsWith(p)))
+                - message: redirect URIs must be absolute URIs
+                  rule: self.all(u, u.contains(':'))
+                - message: redirect URIs must not contain whitespace
+                  rule: self.all(u, !u.matches('.*\s.*'))
+              responseTypes:
+                description: ResponseTypes defaults to ["code"] server-side.
+                items:
+                  type: string
+                type: array
+              scope:
+                type: string
+              secretName:
+                description: |-
+                  SecretName is the name of the Secret the credentials are written to,
+                  created in the same namespace as this object. Defaults to
+                  "<name>-oidc".
+                type: string
+              secretTemplate:
+                description: SecretTemplate customizes metadata on the generated credentials
+                  Secret.
+                properties:
+                  annotations:
+                    additionalProperties:
+                      type: string
+                    type: object
+                  labels:
+                    additionalProperties:
+                      type: string
+                    type: object
+                type: object
+              tokenEndpointAuthMethod:
+                default: client_secret_basic
+                enum:
+                - client_secret_basic
+                - client_secret_post
+                - none
+                type: string
+              updatePolicy:
+                default: Recreate
+                description: |-
+                  UpdatePolicy controls how the operator handles drift between the spec and
+                  the client registered in tsidp.
+                enum:
+                - Recreate
+                - InPlace
+                - Block
+                type: string
+            required:
+            - redirectUris
+            type: object
+          status:
+            description: OIDCClientStatus reflects the observed state of the registration.
+            properties:
+              clientId:
+                description: |-
+                  ClientID is the client_id assigned by tsidp. It is the durable link
+                  between this object and the tsidp registration.
+                type: string
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              issuer:
+                description: Issuer is the OIDC issuer URL reported by tsidp's discovery
+                  document.
+                type: string
+              observedGeneration:
+                format: int64
+                type: integer
+              secretName:
+                description: SecretName is the Secret the credentials were written
+                  to.
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
