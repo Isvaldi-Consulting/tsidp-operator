@@ -197,7 +197,7 @@ jobs:
           FORCE_TESTED_DATE: "1"
         run: ./hack/sync-tsidp-version.sh
       - name: Open sync PR
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.COMPAT_SYNC_PAT || github.token }}
           branch: compat/sync-tsidp-version
