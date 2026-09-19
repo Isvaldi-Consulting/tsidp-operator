@@ -117,7 +117,7 @@ jobs:
             echo "tsidp pin unchanged by this PR; nothing to e2e-test (fast success so the required check stays green)"
             echo "run=false" >> "$GITHUB_OUTPUT"
           fi
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         if: steps.gate.outputs.run == 'true'
         with:
           go-version-file: go.mod
@@ -155,7 +155,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - name: Unit + contract tests
