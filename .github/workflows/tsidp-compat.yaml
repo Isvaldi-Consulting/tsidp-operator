@@ -121,7 +121,7 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         with:
           go-version-file: go.mod
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
         if: steps.gate.outputs.run == 'true'
       - name: Install kind
         if: steps.gate.outputs.run == 'true'
