@@ -1,0 +1,209 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "tsidp.fullname" . }}
+  labels:
+    {{- include "tsidp.labels" . | nindent 4 }}
+spec:
+  # tsidp is single-replica BY DESIGN: it keeps its client registry in a
+  # single JSON state file, holds issued tokens in memory, and owns exactly
+  # one tsnet node identity (one <hostname>.<tailnet>.ts.net). A second
+  # replica would corrupt/fork state and fight over the node identity, so
+  # the replica count is deliberately NOT exposed as a value.
+  replicas: 1
+  serviceName: {{ include "tsidp.fullname" . }}
+  # For a StatefulSet with replicas: 1, RollingUpdate is equivalent to
+  # Recreate — the old pod is deleted before the replacement is created, so
+  # two tsidp instances never run at the same time.
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      {{- include "tsidp.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "tsidp.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "tsidp.serviceAccountName" . }}
+      # The ServiceAccount carries cluster-wide Secrets RBAC for the operator.
+      # Automounting would hand that token to EVERY container — including the
+      # network-facing tsidp container. Disable the automount and instead
+      # project the token into the operator container only (see the
+      # kube-api-access volume below).
+      automountServiceAccountToken: false
+      securityContext:
+        # The official tsidp image runs as uid/gid 1001 ("app"); fsGroup
+        # makes the data volume writable by that user.
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: tsidp
+          image: "{{ .Values.tsidp.image.repository }}:{{ .Values.tsidp.image.tag }}"
+          imagePullPolicy: {{ .Values.tsidp.image.pullPolicy }}
+          args:
+            # -dir is REQUIRED: without it tsidp writes state to its working
+            # directory (/app, root-owned in the official image) and 500s.
+            - "-dir=/data"
+            - "-local-port={{ .Values.tsidp.localPort }}"
+            - "-hostname={{ .Values.tsidp.hostname }}"
+            - "-port={{ .Values.tsidp.port }}"
+            {{- if .Values.tsidp.funnel }}
+            - "-funnel"
+            {{- end }}
+            {{- if .Values.tsidp.advertiseTags }}
+            - "-advertise-tags={{ .Values.tsidp.advertiseTags }}"
+            {{- end }}
+            {{- with .Values.tsidp.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          env:
+            # Required while tsidp is experimental (< v1.0.0).
+            - name: TAILSCALE_USE_WIP_CODE
+              value: "1"
+            {{- if .Values.tsidp.authKey.existingSecret }}
+            - name: TS_AUTHKEY_FILE
+              value: /etc/tsidp-auth/{{ .Values.tsidp.authKey.key }}
+            {{- end }}
+            {{- with .Values.tsidp.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            {{- if .Values.tsidp.authKey.existingSecret }}
+            - name: authkey
+              mountPath: /etc/tsidp-auth
+              readOnly: true
+            {{- end }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1001
+            runAsGroup: 1001
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          {{- with .Values.tsidp.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        - name: operator
+          image: "{{ .Values.operator.image.repository }}:{{ .Values.operator.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.operator.image.pullPolicy }}
+          args:
+            - "--tsidp-url=http://127.0.0.1:{{ .Values.tsidp.localPort }}"
+            - "--resync-interval={{ .Values.operator.resyncInterval }}"
+            {{- with .Values.operator.logLevel }}
+            {{- $ll := toString . }}
+            {{- if not (or (has $ll (list "debug" "info" "error")) (regexMatch "^[1-9][0-9]*$" $ll)) }}
+            {{- fail (printf "operator.logLevel %q is invalid: controller-runtime's --zap-log-level accepts only \"debug\", \"info\", \"error\", or a positive integer (\"warn\" is NOT supported and would crashloop the operator)" $ll) }}
+            {{- end }}
+            - "--zap-log-level={{ $ll }}"
+            {{- end }}
+          volumeMounts:
+            # Hand-rolled equivalent of the automounted SA token, mounted
+            # ONLY here: the pod sets automountServiceAccountToken: false so
+            # the tsidp container never sees the operator's RBAC token.
+            - name: kube-api-access
+              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              readOnly: true
+          ports:
+            - name: metrics
+              containerPort: 8081
+              protocol: TCP
+            - name: health
+              containerPort: 8082
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          {{- with .Values.operator.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        # Projected SA token for the operator container only (the pod-level
+        # automount is disabled above). Mirrors what kubelet would automount:
+        # a bound, expiring token + the API server CA + the pod namespace.
+        - name: kube-api-access
+          projected:
+            defaultMode: 420
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 3607
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+              - downwardAPI:
+                  items:
+                    - path: namespace
+                      fieldRef:
+                        fieldPath: metadata.namespace
+        {{- if .Values.tsidp.authKey.existingSecret }}
+        - name: authkey
+          secret:
+            secretName: {{ .Values.tsidp.authKey.existingSecret }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        {{- if .Values.tsidp.persistence.storageClass }}
+        {{- if eq "-" .Values.tsidp.persistence.storageClass }}
+        storageClassName: ""
+        {{- else }}
+        storageClassName: {{ .Values.tsidp.persistence.storageClass | quote }}
+        {{- end }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.tsidp.persistence.size }}

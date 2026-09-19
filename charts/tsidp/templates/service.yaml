@@ -1,0 +1,18 @@
+# Headless Service required by the StatefulSet (serviceName). tsidp itself
+# serves on its tailnet interface via tsnet, not on the pod IP, so the only
+# port exposed here is the operator's metrics endpoint.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "tsidp.fullname" . }}
+  labels:
+    {{- include "tsidp.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    {{- include "tsidp.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: metrics
+      port: 8081
+      targetPort: metrics
+      protocol: TCP

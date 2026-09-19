@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # Unit tests, vet, and a compile check.
+  lint-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Vet, test, build
+        run: make lint test build
+
+  # Catch uncommitted codegen drift: regenerate CRDs/deepcopy and the chart's
+  # copy of the CRDs, then fail if the working tree changed.
+  verify-generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Regenerate manifests and code
+        run: make manifests generate sync-chart-crds
+      - name: Verify no drift
+        run: |
+          git diff --exit-code || {
+            echo "::error::Generated files are out of date. Run 'make manifests generate sync-chart-crds' and commit the result."
+            exit 1
+          }
+
+  # Helm chart sanity.
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: azure/setup-helm@v4
+      - name: Lint + render chart
+        run: make helm-lint
+
+  # Prove the operator image builds (no push).
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - name: Build operator image (linux/amd64, no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          tags: ghcr.io/isvaldi-consulting/tsidp-operator:ci
