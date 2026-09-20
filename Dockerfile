@@ -1,5 +1,10 @@
-# Build stage
-FROM golang:1.26@sha256:6c2a5538f964f1c82f97ad14988bf05de100d922d159d0e398b54c7b0ca0c6c9 AS build
+# Build stage. --platform=$BUILDPLATFORM: run the compiler on the native
+# build host and CROSS-compile via TARGETOS/TARGETARCH below — Go needs no
+# emulation to target another CPU. Without this, buildx emulates the whole
+# toolchain under QEMU for non-native platforms (~45 min for arm64 on
+# amd64 runners); with it, a multi-arch build is a few minutes. Only the
+# final stage below is per-platform, and nothing executes there.
+FROM --platform=$BUILDPLATFORM golang:1.26@sha256:6c2a5538f964f1c82f97ad14988bf05de100d922d159d0e398b54c7b0ca0c6c9 AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download

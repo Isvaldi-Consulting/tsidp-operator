@@ -130,8 +130,8 @@ run the Tailscale Kubernetes operator and point an egress Service at the
 issuer plus a CoreDNS rewrite of the issuer hostname onto that Service.
 
 Secret keys written for every OIDCClient: `client_id`, `client_secret`,
-`issuer`, `authorization_endpoint`, `token_endpoint`, `userinfo_endpoint`,
-`jwks_uri`, `redirect_uris`.
+`issuer`, `discovery_endpoint`, `authorization_endpoint`, `token_endpoint`,
+`userinfo_endpoint`, `jwks_uri`, `redirect_uris`.
 
 ## Writing an OIDCClient
 

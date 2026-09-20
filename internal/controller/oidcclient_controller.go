@@ -560,6 +560,9 @@ func setSecretMetadata(s *corev1.Secret, disc *tsidp.ProviderMetadata, redirectU
 		s.Data = map[string][]byte{}
 	}
 	s.Data["issuer"] = []byte(disc.Issuer)
+	// Some clients (e.g. Open WebUI) take the discovery URL rather than
+	// individual endpoints.
+	s.Data["discovery_endpoint"] = []byte(strings.TrimSuffix(disc.Issuer, "/") + "/.well-known/openid-configuration")
 	s.Data["authorization_endpoint"] = []byte(disc.AuthorizationEndpoint)
 	s.Data["token_endpoint"] = []byte(disc.TokenEndpoint)
 	s.Data["userinfo_endpoint"] = []byte(disc.UserInfoEndpoint)

@@ -7,13 +7,13 @@ description: >-
   Secrets.
 type: application
 # Chart version (v-less; must equal the release git tag minus its "v").
-version: 0.1.1
+version: 0.1.2
 # Operator version. The default operator image tag falls back to this value,
 # and release images are pushed as ghcr.io/isvaldi-consulting/tsidp-operator:<git tag>,
 # so appVersion CARRIES THE "v" PREFIX and must equal the release git tag
 # exactly (e.g. tag v0.1.0 -> appVersion "v0.1.0"). The release workflow
 # fails if either version here disagrees with the tag being released.
-appVersion: "v0.1.1"
+appVersion: "v0.1.2"
 kubeVersion: ">=1.25.0-0"
 home: https://github.com/isvaldi-consulting/tsidp-operator
 sources:
