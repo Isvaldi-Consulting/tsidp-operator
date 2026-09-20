@@ -225,7 +225,10 @@ func (s *Server) serveEdit(w http.ResponseWriter, r *http.Request, id string) {
 	}
 	for _, u := range uris {
 		if editRejects(u) {
-			fmt.Fprintf(w, "<html><body>error: invalid redirect URI %q</body></html>", u)
+			// Deliberately no echo of the submitted value (CodeQL
+			// go/reflected-xss hygiene): callers only contract on
+			// "HTTP 200 + HTML body on rejection".
+			fmt.Fprint(w, "<html><body>error: invalid redirect URI</body></html>")
 			return
 		}
 	}
