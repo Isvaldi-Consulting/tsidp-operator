@@ -108,6 +108,9 @@ spec:
           args:
             - "--tsidp-url=http://127.0.0.1:{{ .Values.tsidp.localPort }}"
             - "--resync-interval={{ .Values.operator.resyncInterval }}"
+            {{- with .Values.operator.watchNamespaces }}
+            - "--watch-namespaces={{ join "," . }}"
+            {{- end }}
             {{- with .Values.operator.logLevel }}
             {{- $ll := toString . }}
             {{- if not (or (has $ll (list "debug" "info" "error")) (regexMatch "^[1-9][0-9]*$" $ll)) }}

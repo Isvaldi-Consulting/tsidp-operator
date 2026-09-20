@@ -1,4 +1,62 @@
 {{- if .Values.rbac.create }}
+{{- /*
+Two modes:
+  - operator.watchNamespaces empty (default): ClusterRole/ClusterRoleBinding.
+    NOTE the honest blast radius: RBAC cannot be label-scoped, so this grants
+    read/write on EVERY Secret in the cluster (the operator's label selector
+    narrows only its informer cache). Anyone who can run code as, exec into,
+    or attach ephemeral containers to the operator pod — or create a pod
+    using its ServiceAccount — inherits that.
+  - operator.watchNamespaces set: namespaced Role/RoleBinding per listed
+    namespace; the operator is started with --watch-namespaces and needs no
+    cluster-wide Secret access at all.
+*/}}
+{{- $verbsOidc := list "get" "list" "watch" "update" }}
+{{- if .Values.operator.watchNamespaces }}
+{{- range .Values.operator.watchNamespaces }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "tsidp.fullname" $ }}
+  namespace: {{ . }}
+  labels:
+    {{- include "tsidp.labels" $ | nindent 4 }}
+rules:
+  - apiGroups: ["tsidp.isvaldi-consulting.github.io"]
+    resources: ["oidcclients"]
+    verbs: ["get", "list", "watch", "update"]
+  - apiGroups: ["tsidp.isvaldi-consulting.github.io"]
+    resources: ["oidcclients/status"]
+    verbs: ["get", "update"]
+  - apiGroups: ["tsidp.isvaldi-consulting.github.io"]
+    resources: ["oidcclients/finalizers"]
+    verbs: ["update"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "delete"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "tsidp.fullname" $ }}
+  namespace: {{ . }}
+  labels:
+    {{- include "tsidp.labels" $ | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "tsidp.fullname" $ }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "tsidp.serviceAccountName" $ }}
+    namespace: {{ $.Release.Namespace }}
+{{- end }}
+{{- else }}
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -6,41 +64,23 @@ metadata:
   labels:
     {{- include "tsidp.labels" . | nindent 4 }}
 rules:
-  # The operator reconciles OIDCClient resources in all namespaces.
-  - apiGroups:
-      - tsidp.isvaldi-consulting.github.io
-    resources:
-      - oidcclients
-      - oidcclients/status
-      - oidcclients/finalizers
-    verbs:
-      - get
-      - list
-      - watch
-      - create
-      - update
-      - patch
-      - delete
-  # Client credentials are materialized into Secrets.
-  - apiGroups:
-      - ""
-    resources:
-      - secrets
-    verbs:
-      - get
-      - list
-      - watch
-      - create
-      - update
-      - patch
-      - delete
-  - apiGroups:
-      - ""
-    resources:
-      - events
-    verbs:
-      - create
-      - patch
+  - apiGroups: ["tsidp.isvaldi-consulting.github.io"]
+    resources: ["oidcclients"]
+    verbs: ["get", "list", "watch", "update"]
+  - apiGroups: ["tsidp.isvaldi-consulting.github.io"]
+    resources: ["oidcclients/status"]
+    verbs: ["get", "update"]
+  - apiGroups: ["tsidp.isvaldi-consulting.github.io"]
+    resources: ["oidcclients/finalizers"]
+    verbs: ["update"]
+  # Cluster-wide Secrets read/write — see the mode note above. Use
+  # operator.watchNamespaces for a least-privilege install.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "delete"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -56,4 +96,5 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "tsidp.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}
+{{- end }}
 {{- end }}

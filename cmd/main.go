@@ -10,6 +10,7 @@ import (
 	"flag"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -38,10 +39,11 @@ func init() {
 
 func main() {
 	var (
-		tsidpURL       = flag.String("tsidp-url", "http://127.0.0.1:8080", "base URL of the tsidp instance (its -local-port loopback listener in the same pod)")
-		resyncInterval = flag.Duration("resync-interval", 10*time.Minute, "how often to re-verify registrations against tsidp")
-		metricsAddr    = flag.String("metrics-bind-address", ":8081", "metrics endpoint bind address")
-		probeAddr      = flag.String("health-probe-bind-address", ":8082", "health probe bind address")
+		tsidpURL        = flag.String("tsidp-url", "http://127.0.0.1:8080", "base URL of the tsidp instance (its -local-port loopback listener in the same pod)")
+		resyncInterval  = flag.Duration("resync-interval", 10*time.Minute, "how often to re-verify registrations against tsidp")
+		watchNamespaces = flag.String("watch-namespaces", "", "comma-separated list of namespaces to watch for OIDCClients (empty = all namespaces, which requires cluster-wide RBAC)")
+		metricsAddr     = flag.String("metrics-bind-address", ":8081", "metrics endpoint bind address")
+		probeAddr       = flag.String("health-probe-bind-address", ":8082", "health probe bind address")
 	)
 	opts := zap.Options{Development: false}
 	opts.BindFlags(flag.CommandLine)
@@ -55,16 +57,29 @@ func main() {
 		HTTPClient: &http.Client{Timeout: 30 * time.Second},
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme: scheme,
-		// Scope the Secret informer to operator-managed Secrets: without
-		// this, Owns(&Secret{}) would list, watch, and hold every Secret
-		// in the cluster in memory.
-		Cache: cache.Options{
-			ByObject: map[kclient.Object]cache.ByObject{
-				&corev1.Secret{}: {Label: labels.SelectorFromSet(controller.ManagedSecretLabels)},
-			},
+	// Scope the Secret informer to operator-managed Secrets: without this,
+	// Owns(&Secret{}) would list, watch, and hold every Secret in the
+	// cluster in memory. With --watch-namespaces, additionally confine
+	// every informer to the listed namespaces so the operator can run with
+	// namespace-scoped RBAC.
+	cacheOpts := cache.Options{
+		ByObject: map[kclient.Object]cache.ByObject{
+			&corev1.Secret{}: {Label: labels.SelectorFromSet(controller.ManagedSecretLabels)},
 		},
+	}
+	if *watchNamespaces != "" {
+		nsMap := map[string]cache.Config{}
+		for _, ns := range strings.Split(*watchNamespaces, ",") {
+			if ns = strings.TrimSpace(ns); ns != "" {
+				nsMap[ns] = cache.Config{}
+			}
+		}
+		cacheOpts.DefaultNamespaces = nsMap
+	}
+
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+		Scheme:                 scheme,
+		Cache:                  cacheOpts,
 		Metrics:                metricsserver.Options{BindAddress: *metricsAddr},
 		HealthProbeBindAddress: *probeAddr,
 		// No leader election: the operator is a sidecar of a replicas:1

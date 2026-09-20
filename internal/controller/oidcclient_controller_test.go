@@ -593,6 +593,17 @@ func TestRenameLeavesForeignSecretAtOldName(t *testing.T) {
 func TestWhitespaceRedirectURIRejected(t *testing.T) {
 	cr := newCR("app")
 	cr.Spec.RedirectURIs = []string{"https://a.example/cb https://evil.example/cb"}
+	h0 := newHarness(t, cr)
+	h0.settle(t)
+	if oc := h0.getCR(t); oc.Status.ClientID != "" {
+		t.Fatal("space-bearing URI must never reach tsidp")
+	}
+
+	// A leading control character can mask a dangerous scheme past
+	// prefix-matching validators (e.g. "\vjavascript:") — the guard must
+	// reject control runes, not just ASCII whitespace.
+	cr = newCR("app")
+	cr.Spec.RedirectURIs = []string{"\vjavascript:alert(1)"}
 	h := newHarness(t, cr)
 	h.settle(t)
 

@@ -99,6 +99,16 @@ operator:
   # tsidp's API (drift repair). Go duration string.
   resyncInterval: "10m"
 
+  # Namespaces the operator watches for OIDCClients. Empty (default) means
+  # ALL namespaces and requires the cluster-wide RBAC above. Setting an
+  # explicit list switches the chart to namespaced Roles/RoleBindings and
+  # starts the operator with --watch-namespaces — least privilege, strongly
+  # recommended when you know where your OIDCClients live.
+  # watchNamespaces:
+  #   - monitoring
+  #   - myapp
+  watchNamespaces: []
+
 
   # Optional log level passed to controller-runtime's --zap-log-level flag.
   # Valid values: "debug", "info", "error", or a positive integer string
@@ -123,8 +133,11 @@ serviceAccount:
   annotations: {}
 
 rbac:
-  # Create the ClusterRole/ClusterRoleBinding the operator needs
-  # (OIDCClients in all namespaces, operator-managed Secrets, Events).
+  # Create the RBAC the operator needs. With operator.watchNamespaces empty
+  # this is a ClusterRole granting read/write on EVERY Secret in the
+  # cluster (RBAC cannot be label-scoped — the operator's label selector
+  # narrows only its cache). Prefer setting operator.watchNamespaces for a
+  # least-privilege, namespace-scoped install.
   create: true
 
 networkPolicy:

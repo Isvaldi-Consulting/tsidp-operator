@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.26 AS build
+FROM golang:1.26@sha256:6c2a5538f964f1c82f97ad14988bf05de100d922d159d0e398b54c7b0ca0c6c9 AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -11,7 +11,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
 
 # Runtime: distroless static, non-root. The operator is pure Go (CGO off),
 # so the static base suffices.
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
 COPY --from=build /out/tsidp-operator /tsidp-operator
 USER 65532:65532
 ENTRYPOINT ["/tsidp-operator"]

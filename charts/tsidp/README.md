@@ -123,6 +123,7 @@ image) and returns 500s at runtime.
 | `operator.image.repository` | `ghcr.io/isvaldi-consulting/tsidp-operator` | |
 | `operator.image.tag` | `""` | Empty = chart `appVersion`. |
 | `operator.image.pullPolicy` | `IfNotPresent` | |
+| `operator.watchNamespaces` | `[]` | Namespaces to watch for OIDCClients. Empty = all namespaces via a ClusterRole with **cluster-wide Secrets access**; a list switches to namespaced Roles (least privilege, recommended). CRs outside the list are ignored. |
 | `operator.resyncInterval` | `"10m"` | Periodic drift-repair resync. |
 | `operator.logLevel` | `""` | Optional `--zap-log-level`: `debug`, `info`, `error`, or a positive integer for more verbosity. `warn` is **not** valid (controller-runtime rejects it; the chart fails at template time). |
 | `operator.resources` | modest requests/limits | |

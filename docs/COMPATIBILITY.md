@@ -112,19 +112,18 @@ read-only `GITHUB_TOKEN`, and PRs opened by `GITHUB_TOKEN` don't trigger other
 workflows — so we keep the recording step an explicit maintainer action rather
 than fighting those limits.
 
-### COMPAT_SYNC_PAT — giving the sync PR CI
+## Recording a tested pair
 
-The `record-compat` job opens its follow-up PR with
-`peter-evans/create-pull-request`. If that PR is created with the default
-`GITHUB_TOKEN`, **no workflows run on it** — it shows up with zero checks.
-To fix this, add a repository secret named `COMPAT_SYNC_PAT` containing a
-[fine-grained personal access token](https://github.com/settings/personal-access-tokens)
-scoped to this repository with **Contents: read & write** and
-**Pull requests: read & write** permissions. The workflow uses it when
-present (`token: ${{ secrets.COMPAT_SYNC_PAT || github.token }}`), so the
-sync PR is authored by a real user token and gets normal CI. Without the
-secret it falls back to `github.token`, and a maintainer must close and
-reopen the PR (or push an empty commit) to trigger checks manually.
+There is deliberately **no stored credential** for this. After a tsidp bump
+merges with a green e2e, a maintainer runs:
+
+```sh
+FORCE_TESTED_DATE=1 make sync-tsidp-version
+```
+
+and commits the `versions.yaml` + chart-pin result. (An automated PR job
+with a repo PAT existed once; it was removed because the PAT was the
+riskiest credential in CI.)
 
 ## Setting up TS_AUTHKEY
 
