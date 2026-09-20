@@ -77,7 +77,38 @@ Values you are most likely to set:
 | `tsidp.funnel` | `false` | Expose token/JWKS endpoints publicly via Funnel so relying parties outside the tailnet can redeem codes. |
 | `tsidp.persistence.size` | `1Gi` | The PVC holds the tsnet node identity, signing key, and client registry — treat it (and backups of it) as credential material. |
 | `operator.resyncInterval` | `10m` | How often registrations are re-verified against tsidp. |
+| `operator.watchNamespaces` | `[]` | Empty: watch **all** namespaces (needs cluster-wide RBAC). Set a list to enable the hardened, least-privilege install — see below. |
 | `networkPolicy.enabled` | `false` | Optional ingress restriction for the pod. |
+
+### Hardened install (least privilege)
+
+By default the operator watches **all namespaces**, which requires a
+ClusterRole with read/write on every Secret in the cluster (Kubernetes
+RBAC cannot be label-scoped). To harden, list the namespaces where your
+`OIDCClient`s will live:
+
+```sh
+helm install tsidp oci://ghcr.io/isvaldi-consulting/charts/tsidp \
+  --version 0.1.0 -n tsidp \
+  --set tsidp.authKey.existingSecret=tsidp-authkey \
+  --set 'operator.watchNamespaces={monitoring,myapp}'
+```
+
+or in a values file:
+
+```yaml
+operator:
+  watchNamespaces:
+    - monitoring
+    - myapp
+```
+
+This swaps the ClusterRole for one namespaced Role/RoleBinding per listed
+namespace and starts the operator with `--watch-namespaces` — cluster-wide
+Secret access is gone entirely. The trade: an `OIDCClient` created in a
+namespace **not** on the list is silently ignored until you add the
+namespace and `helm upgrade`. Existing installs are unaffected by the
+default; hardening is a pure values change.
 
 Full reference: [`charts/tsidp/README.md`](charts/tsidp/README.md). If your
 relying parties run **inside the same cluster**, remember they must be able
