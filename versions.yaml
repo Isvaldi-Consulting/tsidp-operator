@@ -15,6 +15,9 @@
 # line in charts/tsidp/values.yaml) always equals the tsidp tag of the newest
 # e2e-tested row here. See docs/COMPATIBILITY.md.
 compatibility:
+  - operator: "v0.1.1"
+    tsidp: "v0.0.15"
+    tested: "2026-09-20"
   - operator: "v0.1.0"
     tsidp: "v0.0.15"
     tested: "2026-09-19"
