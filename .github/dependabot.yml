@@ -6,8 +6,10 @@
 version: 2
 updates:
   # Go module dependencies (controller-runtime, k8s.io/*, tailscale, ...).
+
   - package-ecosystem: "gomod"
     directory: "/"
+    target-branch: "develop"
     schedule:
       interval: "weekly"
     groups:
@@ -22,8 +24,10 @@ updates:
       - "go"
 
   # GitHub Actions used by our workflows.
+
   - package-ecosystem: "github-actions"
     directory: "/"
+    target-branch: "develop"
     schedule:
       interval: "weekly"
     labels:
@@ -32,8 +36,10 @@ updates:
 
   # Base images of the operator's own image (root Dockerfile:
   # golang builder + distroless static runtime).
+
   - package-ecosystem: "docker"
     directory: "/"
+    target-branch: "develop"
     schedule:
       interval: "weekly"
     labels:
@@ -50,8 +56,10 @@ updates:
   # NOTE: for the e2e job to run on Dependabot PRs, TS_AUTHKEY must also be
   # configured as a *Dependabot* secret (Settings -> Secrets -> Dependabot),
   # not just an Actions secret.
+
   - package-ecosystem: "docker"
     directory: "/hack"
+    target-branch: "develop"
     schedule:
       interval: "weekly"
     labels:
