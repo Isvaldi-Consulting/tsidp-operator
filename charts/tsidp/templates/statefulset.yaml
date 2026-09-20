@@ -37,7 +37,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "tsidp.serviceAccountName" . }}
-      # The ServiceAccount carries cluster-wide Secrets RBAC for the operator.
+      # The ServiceAccount carries the operator RBAC (cluster-wide Secrets access in default mode; namespaced with operator.watchNamespaces).
       # Automounting would hand that token to EVERY container — including the
       # network-facing tsidp container. Disable the automount and instead
       # project the token into the operator container only (see the

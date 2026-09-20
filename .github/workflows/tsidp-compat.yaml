@@ -45,8 +45,8 @@ on:
       tsidp_tag:
         description: >-
           Optional tsidp image tag to test instead of the pin in
-          hack/tsidp.Dockerfile (e.g. v0.0.16). If e2e passes, the maintainer sync
-          opens a PR updating the pin, chart, and versions.yaml.
+          hack/tsidp.Dockerfile (e.g. v0.0.16). If e2e passes, a maintainer edits hack/tsidp.Dockerfile to the new tag and runs `make sync-tsidp-version`, which
+          updates the chart pin and versions.yaml.
         required: false
         type: string
 

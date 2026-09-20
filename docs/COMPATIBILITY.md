@@ -94,7 +94,7 @@ matrix row. It accepts `SYNC_DATE=YYYY-MM-DD` to backdate a row.
 The `tested:` field is only stamped by the e2e loop: for a row that already
 exists, the script **preserves** the current `tested:` value (e.g.
 `pending-first-e2e`) unless `FORCE_TESTED_DATE=1` is set — the
-`record-compat` job sets it because it only runs after a passing e2e. A
+
 plain maintainer sync is not evidence the pair passed e2e, so it never
 refreshes dates.
 
@@ -104,7 +104,7 @@ refreshes dates.
 2. The `e2e` required check must pass on that PR.
 3. After merge, a maintainer runs `make sync-tsidp-version` and commits, **or**
    triggers the `tsidp compatibility` workflow via *Run workflow*
-   (`workflow_dispatch`) — its `record-compat` job runs the sync script and
+
    opens the follow-up PR automatically.
 
 Why not fully automatic? Workflows triggered by Dependabot run with a
@@ -153,7 +153,7 @@ it — `contract-test` remains the only signal. Fine for forks, not for
 Run the `tsidp compatibility` workflow via **Run workflow** and set the
 optional `tsidp_tag` input (e.g. `v0.0.16`). The e2e job then tests
 `ghcr.io/tailscale/tsidp:<tsidp_tag>` instead of the pin. If it passes, the
-`record-compat` job updates `hack/tsidp.Dockerfile`,
+
 `charts/tsidp/values.yaml`, and `versions.yaml`, and opens a PR with all
 three — a one-click way to roll the pin forward (or back) without waiting for
 Dependabot.

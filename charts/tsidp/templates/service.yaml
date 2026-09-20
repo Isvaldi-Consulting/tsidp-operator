@@ -1,8 +1,10 @@
-# Headless Service required by the StatefulSet (serviceName). tsidp itself
-# serves on its tailnet interface via tsnet, not on the pod IP, so the only
-# No ports are advertised: probes hit the pod IP directly, and the
-# operator metrics endpoint (:8081) is deliberately not published — scrape
-# the pod directly (PodMonitor) if needed, ideally behind a NetworkPolicy.
+---
+# Headless Service: exists to give the StatefulSet stable per-pod DNS
+# (spec.serviceName). It deliberately advertises NO ports: probes target
+# container ports on the pod directly, tsidp serves on its tailnet
+# interface via tsnet, and the operator metrics endpoint (:8081) is not
+# published — scrape the pod directly (e.g. a PodMonitor), ideally behind
+# a NetworkPolicy.
 apiVersion: v1
 kind: Service
 metadata:
@@ -13,8 +15,3 @@ spec:
   clusterIP: None
   selector:
     {{- include "tsidp.selectorLabels" . | nindent 4 }}
-  ports:
-    - name: metrics
-      port: 8081
-      targetPort: metrics
-      protocol: TCP

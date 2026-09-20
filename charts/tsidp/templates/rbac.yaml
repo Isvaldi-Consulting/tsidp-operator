@@ -11,15 +11,17 @@ Two modes:
     namespace; the operator is started with --watch-namespaces and needs no
     cluster-wide Secret access at all.
 */}}
-{{- $verbsOidc := list "get" "list" "watch" "update" }}
 {{- if .Values.operator.watchNamespaces }}
 {{- range .Values.operator.watchNamespaces }}
+{{- if not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" (toString .)) }}
+{{- fail (printf "operator.watchNamespaces entry %q is not a valid namespace name" (toString .)) }}
+{{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: {{ include "tsidp.fullname" $ }}
-  namespace: {{ . }}
+  namespace: {{ . | quote }}
   labels:
     {{- include "tsidp.labels" $ | nindent 4 }}
 rules:
@@ -43,7 +45,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: {{ include "tsidp.fullname" $ }}
-  namespace: {{ . }}
+  namespace: {{ . | quote }}
   labels:
     {{- include "tsidp.labels" $ | nindent 4 }}
 roleRef:

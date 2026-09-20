@@ -74,6 +74,12 @@ func main() {
 				nsMap[ns] = cache.Config{}
 			}
 		}
+		if len(nsMap) == 0 {
+			// An empty map would silently mean "watch everything" —
+			// the opposite of what a non-empty flag asked for.
+			setupLog.Error(nil, "--watch-namespaces was set but contained no usable namespace names")
+			os.Exit(1)
+		}
 		cacheOpts.DefaultNamespaces = nsMap
 	}
 

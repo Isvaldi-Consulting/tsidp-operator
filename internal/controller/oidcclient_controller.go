@@ -240,7 +240,11 @@ func (r *OIDCClientReconciler) reconcileNormal(ctx context.Context, oc *tsidpv1a
 	// destroying the old credentials or the registration.
 	if oc.Status.SecretName != "" && oc.Status.SecretName != secretName(oc) {
 		if _, err := r.secretAdoptable(ctx, oc, secretName(oc)); err != nil {
-			return r.notReady(oc, "SecretConflict", err.Error())
+			reason := "SecretReadFailed"
+			if errors.Is(err, errSecretConflict) {
+				reason = "SecretConflict"
+			}
+			return r.notReady(oc, reason, err.Error())
 		}
 		// The old Secret gets the same scrutiny as the new one: delete it
 		// only if it is still controller-owned by this CR (someone may

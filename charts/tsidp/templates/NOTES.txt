@@ -53,9 +53,15 @@ deployed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}
 
 4. SECURITY NOTE
 
-   tsidp's loopback listener (127.0.0.1:{{ .Values.tsidp.localPort }}) grants full admin (and note the operator container in this pod holds a token with cluster-wide Secrets read/write unless operator.watchNamespaces is set — pod-create in this namespace inherits it) and
-   dynamic client registration to ANY caller that reaches it — that trust is
-   how the operator sidecar works. It is not reachable from other pods, but
-   "kubectl port-forward" (and "kubectl exec") into this pod bypasses that.
-   Restrict RBAC on pods/portforward, pods/exec, and pods/ephemeralcontainers and pods/exec for this namespace to
-   cluster administrators only.
+   tsidp's loopback listener (127.0.0.1:{{ .Values.tsidp.localPort }})
+   grants full admin and dynamic client registration to ANY caller that
+   reaches it — that trust is how the operator sidecar works. It is not
+   reachable from other pods, but "kubectl port-forward", "kubectl exec",
+   and "kubectl debug" into this pod bypass that.
+
+   In the default install the operator's ServiceAccount also carries
+   CLUSTER-WIDE Secrets read/write (set operator.watchNamespaces to scope
+   it) — and any pod created in this namespace may name that
+   ServiceAccount and inherit it. Restrict pods/portforward, pods/exec,
+   pods/ephemeralcontainers, AND pod-create in this namespace to cluster
+   administrators only; best run this release in a dedicated namespace.

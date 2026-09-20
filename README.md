@@ -105,10 +105,23 @@ operator:
 
 This swaps the ClusterRole for one namespaced Role/RoleBinding per listed
 namespace and starts the operator with `--watch-namespaces` — cluster-wide
-Secret access is gone entirely. The trade: an `OIDCClient` created in a
-namespace **not** on the list is silently ignored until you add the
-namespace and `helm upgrade`. Existing installs are unaffected by the
-default; hardening is a pure values change.
+Secret access is gone entirely. The trades:
+
+- An `OIDCClient` created in a namespace **not** on the list is silently
+  ignored until you add the namespace and `helm upgrade`.
+- **Every listed namespace must already exist** — Helm cannot create
+  Roles in a namespace that isn't there, and the failed upgrade aborts
+  the whole release. Deleting a watched namespace later takes its Role
+  with it and the operator fails closed (crashloops at cache sync) until
+  the list is corrected.
+- **Migrating an existing cluster-wide install**: before narrowing the
+  list, make sure no `OIDCClient`s live outside it — CRs in unwatched
+  namespaces keep their deregistration finalizer but nothing processes
+  it, so deletes hang until you re-add the namespace (or manually clear
+  the finalizer) and their tsidp registrations stay live unmanaged.
+
+Existing installs are unaffected by the default; hardening is a pure
+values change.
 
 Full reference: [`charts/tsidp/README.md`](charts/tsidp/README.md). If your
 relying parties run **inside the same cluster**, remember they must be able
