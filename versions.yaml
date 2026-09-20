@@ -1,8 +1,8 @@
 # tsidp-operator <-> tsidp compatibility matrix.
 #
 # Machine-updated by hack/sync-tsidp-version.sh (invoked via
-# `make sync-tsidp-version` or the record-compat job of
-# .github/workflows/tsidp-compat.yaml). Newest row first.
+# `make sync-tsidp-version`; there is deliberately no CI job that writes
+# this file). Newest row first.
 #
 # Schema:
 #   compatibility:
@@ -15,6 +15,9 @@
 # line in charts/tsidp/values.yaml) always equals the tsidp tag of the newest
 # e2e-tested row here. See docs/COMPATIBILITY.md.
 compatibility:
+  - operator: "v0.1.1"
+    tsidp: "v0.0.15"
+    tested: "2026-09-20"
   - operator: "v0.1.0"
     tsidp: "v0.0.15"
     tested: "2026-09-19"

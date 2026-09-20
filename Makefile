@@ -41,6 +41,7 @@ docker-build:
 helm-lint:
 	helm lint charts/tsidp
 	helm template charts/tsidp >/dev/null
+	helm template charts/tsidp --set 'operator.watchNamespaces={a-ns,b-ns}' >/dev/null
 
 ## Version pinning (see docs/COMPATIBILITY.md)
 

@@ -24,13 +24,13 @@
 #      the Dependabot secret store).
 #   3. On merge, a maintainer runs `make sync-tsidp-version` (or triggers this
 #      workflow via workflow_dispatch) to propagate the tag into
-#      charts/tsidp/values.yaml and versions.yaml via the record-compat job.
+#      charts/tsidp/values.yaml and versions.yaml via `make sync-tsidp-version`.
 #
 # Honesty note about automation limits: workflows triggered by Dependabot run
 # with a read-only GITHUB_TOKEN, and PRs opened *by* GITHUB_TOKEN do not
 # trigger other workflows. So we do not try to auto-commit the values.yaml /
-# versions.yaml sync onto Dependabot's PR — the record-compat job below is a
-# deliberate, maintainer-initiated workflow_dispatch step instead.
+# versions.yaml sync onto Dependabot's PR — a maintainer runs
+# `FORCE_TESTED_DATE=1 make sync-tsidp-version` after merge instead.
 
 name: tsidp compatibility
 
@@ -45,8 +45,8 @@ on:
       tsidp_tag:
         description: >-
           Optional tsidp image tag to test instead of the pin in
-          hack/tsidp.Dockerfile (e.g. v0.0.16). If e2e passes, record-compat
-          opens a PR updating the pin, chart, and versions.yaml.
+          hack/tsidp.Dockerfile (e.g. v0.0.16). If e2e passes, a maintainer edits hack/tsidp.Dockerfile to the new tag and runs `make sync-tsidp-version`, which
+          updates the chart pin and versions.yaml.
         required: false
         type: string
 
@@ -89,7 +89,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           # Full history so the gate step can diff against the PR base ref.
           fetch-depth: 0
@@ -117,15 +117,15 @@ jobs:
             echo "tsidp pin unchanged by this PR; nothing to e2e-test (fast success so the required check stays green)"
             echo "run=false" >> "$GITHUB_OUTPUT"
           fi
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         if: steps.gate.outputs.run == 'true'
         with:
           go-version-file: go.mod
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5
         if: steps.gate.outputs.run == 'true'
       - name: Install kind
         if: steps.gate.outputs.run == 'true'
-        uses: helm/kind-action@v1
+        uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1
         with:
           install_only: true
       - name: Resolve tsidp image under test
@@ -154,62 +154,15 @@ jobs:
   contract-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
       - name: Unit + contract tests
         run: make test
 
-  # Record a passing pair: propagate the tested tsidp tag into
-  # charts/tsidp/values.yaml and versions.yaml, and open a PR with the result.
-  # Deliberately restricted to workflow_dispatch (see honesty note at top);
-  # for Dependabot bumps the maintainer runs `make sync-tsidp-version` after
-  # merge instead.
-  #
-  # TOKEN NOTE: PRs created with the default GITHUB_TOKEN do NOT trigger any
-  # workflows, so the sync PR would land with no CI at all. Maintainers
-  # should add a COMPAT_SYNC_PAT repo secret (fine-grained PAT scoped to this
-  # repo with contents:write + pull-requests:write) so the PR is opened with
-  # a real user token and gets normal CI. Without it we fall back to
-  # github.token and the maintainer must close/reopen the PR (or push an
-  # empty commit) to kick off checks. See docs/COMPATIBILITY.md.
-  record-compat:
-    needs: e2e
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-    steps:
-      - uses: actions/checkout@v5
-      - name: Apply tsidp_tag override to the pin (if provided)
-        if: inputs.tsidp_tag != ''
-        env:
-          TSIDP_TAG_OVERRIDE: ${{ inputs.tsidp_tag }}
-        run: |
-          sed -i -E "s|^FROM ghcr\.io/tailscale/tsidp:.*$|FROM ghcr.io/tailscale/tsidp:${TSIDP_TAG_OVERRIDE}|" hack/tsidp.Dockerfile
-          grep '^FROM' hack/tsidp.Dockerfile
-      - name: Sync pinned version into chart and versions.yaml
-        env:
-          # This job only runs after a passing e2e (needs: e2e), so it is
-          # the one place allowed to stamp the `tested:` date.
-          FORCE_TESTED_DATE: "1"
-        run: ./hack/sync-tsidp-version.sh
-      - name: Open sync PR
-        uses: peter-evans/create-pull-request@v7
-        with:
-          token: ${{ secrets.COMPAT_SYNC_PAT || github.token }}
-          branch: compat/sync-tsidp-version
-          title: "chore: record e2e-tested tsidp version"
-          commit-message: "chore: sync tsidp pin into chart and versions.yaml"
-          labels: tsidp-bump
-          body: |
-            Automated by the `tsidp compatibility` workflow (record-compat job)
-            after a passing e2e run.
-
-            - `hack/tsidp.Dockerfile`: pinned tsidp tag (source of truth)
-            - `charts/tsidp/values.yaml`: chart default tsidp image tag
-            - `versions.yaml`: compatibility matrix row with the tested date
-
-            See docs/COMPATIBILITY.md.
+  # Recording a passing pair (versions.yaml + chart pin) is deliberately a
+  # human step with no stored credential: after a tsidp bump merges with a
+  # green e2e, a maintainer runs `FORCE_TESTED_DATE=1 make sync-tsidp-version`
+  # locally and commits the result. (A record-compat job with a repo PAT
+  # used to live here; removed — the PAT was the riskiest credential in CI.)

@@ -389,8 +389,8 @@ func TestExistingUnownedSecretBlocksRegistration(t *testing.T) {
 	if len(h.idp.Snapshot()) != 0 {
 		t.Fatal("must not create remote state while the target Secret is not ours")
 	}
-	if meta.IsStatusConditionTrue(oc.Status.Conditions, tsidpv1alpha1.ConditionReady) {
-		t.Fatalf("expected Ready=False: %+v", oc.Status.Conditions)
+	if c := meta.FindStatusCondition(oc.Status.Conditions, tsidpv1alpha1.ConditionReady); c == nil || c.Status != metav1.ConditionFalse || c.Reason != "SecretConflict" {
+		t.Fatalf("expected Ready=False reason SecretConflict: %+v", oc.Status.Conditions)
 	}
 	sec := h.getSecret(t, "app-oidc")
 	if string(sec.Data["unrelated"]) != "user data" {
@@ -593,6 +593,27 @@ func TestRenameLeavesForeignSecretAtOldName(t *testing.T) {
 func TestWhitespaceRedirectURIRejected(t *testing.T) {
 	cr := newCR("app")
 	cr.Spec.RedirectURIs = []string{"https://a.example/cb https://evil.example/cb"}
+	h0 := newHarness(t, cr)
+	h0.settle(t)
+	if oc := h0.getCR(t); oc.Status.ClientID != "" {
+		t.Fatal("space-bearing URI must never reach tsidp")
+	}
+
+	// A leading control character can mask a dangerous scheme past
+	// prefix-matching validators (e.g. "\vjavascript:") — the guard must
+	// reject control runes, not just ASCII whitespace.
+	cr = newCR("app")
+	cr.Spec.RedirectURIs = []string{"\vjavascript:alert(1)"}
+	h1 := newHarness(t, cr)
+	h1.settle(t)
+	if oc := h1.getCR(t); oc.Status.ClientID != "" {
+		t.Fatal("control-rune-masked scheme must never reach tsidp")
+	}
+
+	// \x01 is IsControl but NOT IsSpace — pins the IsControl clause
+	// independently of the whitespace check.
+	cr = newCR("app")
+	cr.Spec.RedirectURIs = []string{"\x01https://a.example/cb"}
 	h := newHarness(t, cr)
 	h.settle(t)
 

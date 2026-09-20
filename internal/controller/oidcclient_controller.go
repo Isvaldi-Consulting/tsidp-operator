@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -44,6 +45,11 @@ const (
 	errBackoff = 30 * time.Second
 )
 
+// errSecretConflict marks failures caused by a Secret name collision with
+// an object this CR does not own — surfaced with its own condition reason
+// so a pre-squatted name reads as a conflict, not a generic failure.
+var errSecretConflict = errors.New("secret name conflict")
+
 // ManagedSecretLabels is stamped on every credentials Secret. main.go scopes
 // the manager's Secret informer to this label so the operator does not cache
 // (or need RBAC-watch) every Secret in the cluster.
@@ -66,10 +72,10 @@ type OIDCClientReconciler struct {
 	ResyncInterval time.Duration
 }
 
-// +kubebuilder:rbac:groups=tsidp.isvaldi-consulting.github.io,resources=oidcclients,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=tsidp.isvaldi-consulting.github.io,resources=oidcclients/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=tsidp.isvaldi-consulting.github.io,resources=oidcclients,verbs=get;list;watch;update
+// +kubebuilder:rbac:groups=tsidp.isvaldi-consulting.github.io,resources=oidcclients/status,verbs=get;update
 // +kubebuilder:rbac:groups=tsidp.isvaldi-consulting.github.io,resources=oidcclients/finalizers,verbs=update
-// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;delete
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 // Fingerprint returns the ownership marker the operator appends to the
@@ -200,14 +206,19 @@ func (r *OIDCClientReconciler) reconcileDelete(ctx context.Context, oc *tsidpv1a
 func (r *OIDCClientReconciler) reconcileNormal(ctx context.Context, oc *tsidpv1alpha1.OIDCClient) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 
-	// Whitespace in a redirect URI can never be valid: tsidp's /edit wire
-	// format is newline-separated and trims each line, so such a spec
-	// could register but never converge. Enforced here rather than in CRD
-	// CEL because backslash escapes do not survive the marker->YAML->CEL
+	// Whitespace or control characters in a redirect URI can never be
+	// valid: tsidp's /edit wire format is newline-separated and TrimSpaces
+	// each line (which also strips \v, \f, and unicode spaces), so such a
+	// spec could register but never converge — and a leading control rune
+	// can mask a dangerous scheme past prefix-matching validators. Match
+	// tsidp's own normalization semantics exactly. Enforced here rather
+	// than in CRD CEL because escapes do not survive the marker->YAML->CEL
 	// round trip.
 	for _, u := range oc.Spec.RedirectURIs {
-		if strings.ContainsAny(u, " \t\r\n") {
-			return r.notReady(oc, "SpecInvalid", fmt.Sprintf("redirect URI %q contains whitespace", u))
+		for _, c := range u {
+			if unicode.IsSpace(c) || unicode.IsControl(c) {
+				return r.notReady(oc, "SpecInvalid", fmt.Sprintf("redirect URI %q contains whitespace or control characters", u))
+			}
 		}
 	}
 
@@ -229,7 +240,11 @@ func (r *OIDCClientReconciler) reconcileNormal(ctx context.Context, oc *tsidpv1a
 	// destroying the old credentials or the registration.
 	if oc.Status.SecretName != "" && oc.Status.SecretName != secretName(oc) {
 		if _, err := r.secretAdoptable(ctx, oc, secretName(oc)); err != nil {
-			return r.notReady(oc, "SecretConflict", err.Error())
+			reason := "SecretReadFailed"
+			if errors.Is(err, errSecretConflict) {
+				reason = "SecretConflict"
+			}
+			return r.notReady(oc, reason, err.Error())
 		}
 		// The old Secret gets the same scrutiny as the new one: delete it
 		// only if it is still controller-owned by this CR (someone may
@@ -256,7 +271,11 @@ func (r *OIDCClientReconciler) reconcileNormal(ctx context.Context, oc *tsidpv1a
 	if oc.Status.ClientID == "" {
 		outcome, err := r.registerOrAdopt(ctx, oc, disc)
 		if err != nil {
-			return r.notReady(oc, "RegistrationFailed", err.Error())
+			reason := "RegistrationFailed"
+			if errors.Is(err, errSecretConflict) {
+				reason = "SecretConflict"
+			}
+			return r.notReady(oc, reason, err.Error())
 		}
 		switch outcome {
 		case outcomeBurnedOrphan:
@@ -376,7 +395,7 @@ func (r *OIDCClientReconciler) secretAdoptable(ctx context.Context, oc *tsidpv1a
 		if ref != nil {
 			owner = fmt.Sprintf("%s %s", ref.Kind, ref.Name)
 		}
-		return nil, fmt.Errorf("Secret %s/%s already exists and is not owned by this OIDCClient (%s); delete it or choose a different spec.secretName", oc.Namespace, name, owner)
+		return nil, fmt.Errorf("%w: Secret %s/%s already exists and is not owned by this OIDCClient (%s); delete it or choose a different spec.secretName", errSecretConflict, oc.Namespace, name, owner)
 	}
 	return &sec, nil
 }

@@ -13,7 +13,7 @@
 #
 # The `tested:` field is only stamped by the e2e loop: for an EXISTING
 # (operator, tsidp) row the current value is preserved unless
-# FORCE_TESTED_DATE=1 is set (the record-compat CI job sets it after a
+# FORCE_TESTED_DATE=1 is set (a maintainer sets it after a green e2e after a
 # passing e2e run). New rows get $SYNC_DATE if set, else today's UTC date.
 #
 # Idempotent: running it twice produces no change (existing rows are left
@@ -77,7 +77,7 @@ tmp="$(mktemp)"
 if pair_exists; then
   if [[ "${FORCE_TESTED_DATE:-}" == "1" ]]; then
     # Stamp the tested date of the existing (operator, tsidp) row. Only the
-    # e2e loop should do this (record-compat sets FORCE_TESTED_DATE=1 after
+    # e2e loop should do this (a maintainer sets FORCE_TESTED_DATE=1 after
     # a passing run).
     awk -v op="$operator_version" -v tag="$tag" -v date="$sync_date" '
       index($0, "- operator:") > 0 { inblock = index($0, "\"" op "\"") > 0 }
