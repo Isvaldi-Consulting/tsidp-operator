@@ -129,7 +129,7 @@ func TestCreateRegistersAndWritesSecret(t *testing.T) {
 	}
 
 	sec := h.getSecret(t, "app-oidc")
-	for _, k := range []string{"client_id", "client_secret", "issuer", "authorization_endpoint", "token_endpoint", "userinfo_endpoint", "jwks_uri", "redirect_uris"} {
+	for _, k := range []string{"client_id", "client_secret", "issuer", "authorization_endpoint", "token_endpoint", "userinfo_endpoint", "jwks_uri", "discovery_endpoint", "redirect_uris"} {
 		if len(sec.Data[k]) == 0 {
 			t.Fatalf("Secret missing key %q", k)
 		}
