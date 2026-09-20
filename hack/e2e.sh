@@ -43,7 +43,7 @@ NAMESPACE="tsidp-e2e"
 RELEASE="tsidp-e2e"
 AUTHKEY_SECRET="tsidp-authkey"
 SECRET_NAME="sample-oidc" # spec.secretName of config/samples/tsidp_v1alpha1_oidcclient.yaml
-REQUIRED_KEYS=(client_id client_secret issuer authorization_endpoint token_endpoint userinfo_endpoint jwks_uri redirect_uris)
+REQUIRED_KEYS=(client_id client_secret issuer discovery_endpoint authorization_endpoint token_endpoint userinfo_endpoint jwks_uri redirect_uris)
 
 log() { echo "[e2e] $*"; }
 
